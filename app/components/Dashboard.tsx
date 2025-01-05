@@ -1,68 +1,123 @@
 "use client";
 
 import axios from "axios";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { Playlist } from "../types/playlist";
 
 const Dashboard = () => {
-    const [spotifyUrl, setSpotifyUrl] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+    const [spotifyUrl, setSpotifyUrl] = useState<string>("");
+    const [playlist, setPlaylist] = useState<Playlist>({ name: "", description: "", ownerName: "", tracks: [] });
     const [conversionResult, setConversionResult] = useState<any>(null);
+    const [loading, setLoading] = useState<boolean>(false);
+    const [error, setError] = useState("");
 
+    const router = useRouter();
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError("");
-        setConversionResult(null);
+    useEffect(() => {
+        checkAuthStatus();
+    }, [])
 
+    const checkAuthStatus = async () => {
         try {
-            // 1) Hit an API route to parse the Spotify playlist & store track data in session (or DB)
-            // const parseRes = await fetch("/api/parseSpotify", {
-            //     method: "POST",
-            //     headers: { "Content-Type": "application/json" },
-            //     body: JSON.stringify({ spotifyUrl }),
-            // });
+            const { data: { isAuthenticated: _isAuthenticated } } = await axios.get("/api/auth/status");
+            setIsAuthenticated(_isAuthenticated);
+        } catch (err) {
+            setIsAuthenticated(false);
+        }
+    }
 
-            // if (!parseRes.ok) {
-            //     throw new Error("Failed to parse Spotify playlist");
-            // }
+    const handleGoogleSignIn = () => router.push("/api/auth/youtube");
 
-            const parseRes = await axios.post("/api/parseSpotify", { spotifyUrl });
+    const handleParse = async () => {
+        try {
+            setError("");
+            setLoading(true);
 
-            // 2) Redirect the user to Google OAuth
-            window.location.href = "/api/auth/youtube";
-            // This route will handle Google login. 
-            // After Google login, you’ll create the YouTube playlist in a callback.
-
+            const { data: { playlist: _playlist } } = await axios.post("/api/parseSpotify", { spotifyUrl });
+            setPlaylist(_playlist);
+            console.log(_playlist)
+            setLoading(false);
         } catch (err: any) {
             setError(err.message);
             setLoading(false);
         }
     };
 
+    const handleCreatePlaylist = async () => {
+        try {
+            setError("");
+            setLoading(true);
 
+            const { data } = await axios.post("/api/youtube/createPlaylist", { playlist });
+            setConversionResult(data);
+            setLoading(false);
+        } catch (err: any) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            router.push("/api/auth/logout");
+            setIsAuthenticated(false);
+        } catch (err: any) {
+            console.error(err);
+        }
+    }
 
     return (
         <div>
             <h1>Spotify to YouTube Converter</h1>
-            <form onSubmit={handleSubmit}>
-                <input
-                    type="text"
-                    placeholder="Enter Spotify Playlist URL"
-                    value={spotifyUrl}
-                    onChange={(e) => setSpotifyUrl(e.target.value)}
-                />
-                <button type="submit" disabled={loading}>
-                    {loading ? "Processing..." : "Convert"}
-                </button>
-            </form>
-            {error && <p style={{ color: "red" }}>Error: {error}</p>}
-            {conversionResult && (
-                <div>
-                    <p>Conversion done! YouTube link: {conversionResult.youtubeLink}</p>
-                </div>
+
+            {!isAuthenticated ? (
+                <>
+                    <p>Please sign in with Google first to proceed.</p>
+                    <button onClick={handleGoogleSignIn} className="border p-2 bg-blue-500 text-white rounded">
+                        Sign in with Google
+                    </button>
+                </>
+            ) : (
+                <>
+                    <div>
+                        <input
+                            type="text"
+                            placeholder="Spotify Playlist URL"
+                            value={spotifyUrl}
+                            onChange={(e) => setSpotifyUrl(e.target.value)}
+                        />
+                        <button onClick={handleParse} disabled={loading}>
+                            {loading ? "Parsing..." : "Parse Spotify"}
+                        </button>
+                    </div>
+
+                    {playlist.tracks.length > 0 && (
+                        <div>
+                            <h2>{playlist.name}</h2>
+                            <p>Owner: {playlist.ownerName}</p>
+                            <p>Description: {playlist.description}</p>
+                            <p>Found {playlist.tracks.length} tracks.</p>
+                            <button onClick={handleCreatePlaylist} disabled={loading}>
+                                {loading ? "Converting..." : "Create YT Playlist"}
+                            </button>
+                        </div>
+                    )}
+
+                    {conversionResult && (
+                        <div>
+                            <p>Conversion done! YouTube Playlist ID: {conversionResult.youtubePlaylistId}</p>
+                        </div>
+                    )}
+
+                    <div>
+                        <button onClick={handleLogout}>Logout</button>
+                    </div>
+                </>
             )}
+
+            {error && <p style={{ color: "red" }}>{error}</p>}
         </div>
     )
 }
